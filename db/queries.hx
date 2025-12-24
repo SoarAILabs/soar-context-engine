@@ -1,4 +1,3 @@
-// every node -> needs to be created
 // create all nodes
 QUERY CreateRepository (repo_id: String, name: String, created_at: Date) =>
     repo <- AddN<Repository>({
@@ -37,6 +36,8 @@ QUERY CreateCommit (branch_id:String,commit_id: String, commit_message: String, 
 
 QUERY CreateFileChanges (commit_id: String, file_id: String, file_name: String, file_path: String, is_renamed: Boolean, old_path: String, change_type: String, changed_diff_hunks_array: String) =>
     file_changes <- AddN<FileChanges>({
+    commit_id: commit_id,
+    file_id: file_id,
     file_name: file_name,
     file_path: file_path,
     is_renamed: is_renamed,
@@ -49,6 +50,7 @@ QUERY CreateFileChanges (commit_id: String, file_id: String, file_name: String, 
 
 QUERY CreateDiffHunk(file_id:String, diff_hunk_id: String, old_start_position: I64, old_start_count: I64, new_line_position:I64, new_line_count:I64, diff: String) =>
     diff_hunks <- AddN<DiffHunks>({
+    file_id: file_id,
     diff_hunk_id: diff_hunk_id,
     old_start_position: old_start_position,
     old_start_count: old_start_count,
@@ -112,6 +114,3 @@ QUERY CreateDiffHunksVector(diff_hunk_id: String, diff: String, created_at: Date
 QUERY SearchDiffHunksVector (query: String, limit: I64) =>
     results <- SearchV<DiffHunksVector>(Embed(query), limit)
     RETURN results
-
-
-// traversals
