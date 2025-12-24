@@ -103,10 +103,10 @@ QUERY CreateFileChangesToDiffHunks(file_id: String,
 
 
 // remember to add OPENAI API KEY in .env for `Embed` to work
-QUERY CreateDiffHunksVector(diff_hunk_id: String, diff: String, created_at: Date) =>
-    diff <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
-    diff_hunks_vector <- AddV<DiffHunksVector>(Embed(diff), {diff_hunk_id: diff_hunk_id, diff: diff, created_at: created_at})
-    edge <- AddE<DiffHunksToDiffHunksVector>::From(diff)::To(diff_hunks_vector)
+QUERY CreateDiffHunksVector(diff_hunk_id: String, diff_content: String, created_at: Date) =>
+    diff_hunk_node <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
+    diff_hunks_vector <- AddV<DiffHunksVector>(Embed(diff_content), {diff_hunk_id: diff_hunk_id, diff_content: diff_content, created_at: created_at})
+    edge <- AddE<DiffHunksToDiffHunksVector>::From(diff_hunk_node)::To(diff_hunks_vector)
     RETURN diff_hunks_vector
 
 

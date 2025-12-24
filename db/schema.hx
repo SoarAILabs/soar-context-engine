@@ -92,10 +92,6 @@ E::DiffHunksToDiffHunksVector{
 // vector
 V::DiffHunksVector{
     INDEX diff_hunk_id: String,
-    //old_start_position: I64,
-    //old_start_count: I64,
-    //new_line_position:I64,
-    //new_line_count:I64,
-    diff: String,
+    diff_content: String,
     created_at: Date DEFAULT NOW
 }
