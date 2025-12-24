@@ -3,8 +3,8 @@ name = "context-engine"
 queries = "./db/"
 container_runtime = "docker"
 
-[local.dev]
+[local.context-engine]
 port = 6969
-build_mode = "dev"
+build_mode = "debug"
 
 [cloud]
