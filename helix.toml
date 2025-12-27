@@ -4,7 +4,7 @@ queries = "./db/"
 container_runtime = "docker"
 
 [local.context-engine]
-port = 6969
+port = 7000
 build_mode = "debug"
 
 [cloud]

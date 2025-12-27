@@ -110,7 +110,25 @@ QUERY CreateDiffHunksVector(diff_hunk_id: String, diff_content: String, created_
     RETURN diff_hunks_vector
 
 
-// search diff hunks
+// commit keyword search
+QUERY SearchKeywordCommit(keywords: String, limit:I64)=>
+    results <- SearchBM25<Commit>(keywords, limit)
+    RETURN results
+
+// will need more keyword searches
+
+// semantic search search diff hunks
 QUERY SearchDiffHunksVector (query: String, limit: I64) =>
     results <- SearchV<DiffHunksVector>(Embed(query), limit)
     RETURN results
+
+
+// get all -> for total amount of everything
+    // get all branches
+    // get all repos
+    // get all commits
+    // get all filechanges?
+    // get all diff hunks
+    // get all diff hunks vector
+
+// split up total spawn threads -> parallelize
