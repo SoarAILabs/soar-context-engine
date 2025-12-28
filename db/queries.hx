@@ -123,32 +123,33 @@ QUERY SearchDiffHunksVector (query: String, limit: I64) =>
     RETURN results
 
 
-// get all -> for total amount of everything
+// we get count for total number of items in that node.
+// now we can equally split them to spawn threads + parallelize
+
+// i think 10 is a good place to start
+// so after every 10 commits, for eg, search will be spawned on a  new thread from the 11th commit to the 20th commit and so on
+
 // get all branches
 QUERY GetAllBranches () =>
-    branches <- N<Branch>
+    branches <- N<Branch>::COUNT
     RETURN branches
 // get all repos
 QUERY GetAllRepos () =>
-    repos <- N<Repository>
+    repos <- N<Repository>::COUNT
     RETURN repos
 // get all commits
 QUERY GetAllCommits () =>
-    commits <- N<Commit>
+    commits <- N<Commit>::COUNT
     RETURN commits
 // get all filechanges?
 QUERY GetAllFileChanges()=>
-    file_changes <- N<FileChanges>
+    file_changes <- N<FileChanges>::COUNT
     RETURN file_changes
 // get all diff hunks
 QUERY GetAllDiffHunks()=>
-    diff_hunks <- N<DiffHunks>
+    diff_hunks <- N<DiffHunks>::COUNT
     RETURN diff_hunks
 // get all diff hunks vector
 QUERY GetAllDiffHunkVectors()=>
-    diff_hunk_vectors <- N<DiffHunksVector>
+    diff_hunk_vectors <- N<DiffHunksVector>::COUNT
     RETURN diff_hunk_vectors
-
-
-
-// split up total spawn threads -> parallelize
