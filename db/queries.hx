@@ -124,11 +124,31 @@ QUERY SearchDiffHunksVector (query: String, limit: I64) =>
 
 
 // get all -> for total amount of everything
-    // get all branches
-    // get all repos
-    // get all commits
-    // get all filechanges?
-    // get all diff hunks
-    // get all diff hunks vector
+// get all branches
+QUERY GetAllBranches () =>
+    branches <- N<Branch>
+    RETURN branches
+// get all repos
+QUERY GetAllRepos () =>
+    repos <- N<Repository>
+    RETURN repos
+// get all commits
+QUERY GetAllCommits () =>
+    commits <- N<Commit>
+    RETURN commits
+// get all filechanges?
+QUERY GetAllFileChanges()=>
+    file_changes <- N<FileChanges>
+    RETURN file_changes
+// get all diff hunks
+QUERY GetAllDiffHunks()=>
+    diff_hunks <- N<DiffHunks>
+    RETURN diff_hunks
+// get all diff hunks vector
+QUERY GetAllDiffHunkVectors()=>
+    diff_hunk_vectors <- N<DiffHunksVector>
+    RETURN diff_hunk_vectors
+
+
 
 // split up total spawn threads -> parallelize
