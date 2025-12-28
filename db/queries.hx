@@ -130,6 +130,18 @@ QUERY SearchDiffHunksVector (query: String, limit: I64) =>
     results <- SearchV<DiffHunksVector>(Embed(query), limit)
     RETURN results
 
+//Parameter Tuning for RerankRRF
+//Start with the default k=60 and adjust based on your observations:
+//If results seem too similar, try a lower k (30-40) to emphasize top rankings
+//If you want more variety, try a higher k (80-100) to flatten differences
+//Test with real queries and evaluate result quality
+
+QUERY SearchDiffHunksVectorRRF(query:String, limit: I64)=>
+    results <- SearchV<DiffHunksVector>(Embed(query), limit)
+        ::RerankRRF()
+        ::RANGE(0,10)
+    RETURN results
+
 // we get count for total number of items in that node.
 // now we can equally split them to spawn threads + parallelize
 // double regex hits like zed search(https://zed.dev/blog/nerd-sniped-project-search)
