@@ -115,7 +115,15 @@ QUERY SearchKeywordCommit(keywords: String, limit:I64)=>
     results <- SearchBM25<Commit>(keywords, limit)
     RETURN results
 
-// will need more keyword searches
+// file changes keyword search
+QUERY SearchKeywordFileChanges(keywords: String, limit:I64)=>
+    results <- SearchBM25<FileChanges>(keywords, limit)
+    RETURN results
+
+// diff hunks keyword search
+QUERY SearchKeywordDiffHunks(keywords:String, limit: I64)=>
+    results <- SearchBM25<DiffHunks>(keywords, limit)
+    RETURN results
 
 // semantic search search diff hunks
 QUERY SearchDiffHunksVector (query: String, limit: I64) =>
