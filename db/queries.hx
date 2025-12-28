@@ -122,12 +122,9 @@ QUERY SearchDiffHunksVector (query: String, limit: I64) =>
     results <- SearchV<DiffHunksVector>(Embed(query), limit)
     RETURN results
 
-
 // we get count for total number of items in that node.
 // now we can equally split them to spawn threads + parallelize
-
-// i think 10 is a good place to start
-// so after every 10 commits, for eg, search will be spawned on a  new thread from the 11th commit to the 20th commit and so on
+// double regex hits like zed search(https://zed.dev/blog/nerd-sniped-project-search)
 
 // get all branches
 QUERY GetAllBranches () =>
