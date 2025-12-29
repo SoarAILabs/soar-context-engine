@@ -8,58 +8,37 @@ QUERY CreateRepository (repo_id: String, name: String, created_at: Date) =>
     RETURN repo
 
 // Branch
-QUERY CreateBranch (repo_id: String, branch_id: String, name: String, current_commit_id: String, current_head: Boolean, has_remote: Boolean) =>
+QUERY CreateBranch (repo_id: String, branch_id: String, name: String, current_head: Boolean, has_remote: Boolean) =>
 	branch <- AddN<Branch>({
 	    repo_id: repo_id,
 		branch_id: branch_id,
 	    name: name,
-	    current_commit_id: current_commit_id,
 	    current_head: current_head,
 	    has_remote: has_remote
 	})
 	RETURN branch
 
 // Commit
-QUERY CreateCommit (branch_id:String,commit_id: String, commit_message: String, author_name: String, author_email: String, timestamp: Date, parent_commit_id: String, changed_files_array: String ) =>
+QUERY CreateCommit (parent_commit_id: String,commit_id: String,
+no_of_files_changed: I32,
+old_blob_sha: String,
+new_blob_sha: String,
+diff_position: String,
+diff_content: String,
+commit_message: String, author_name: String, author_email: String) =>
 	commit <- AddN<Commit>({
-	    branch_id: branch_id,
+	    parent_commit_id: parent_commit_id,
 		commit_id: commit_id,
 		commit_message: commit_message,
 		author_name: author_name,
 		author_email: author_email,
-		timestamp: timestamp,
-		parent_commit_id: parent_commit_id,
-		changed_files_array: changed_files_array,
-	})
+		no_of_files_changed: no_of_files_changed,
+		old_blob_sha: old_blob_sha,
+		new_blob_sha: new_blob_sha,
+		diff_position: diff_position,
+		diff_content: diff_content
+		})
 	RETURN commit
-
-
-QUERY CreateFileChanges (commit_id: String, file_id: String, file_name: String, file_path: String, is_renamed: Boolean, old_path: String, change_type: String, changed_diff_hunks_array: String) =>
-    file_changes <- AddN<FileChanges>({
-    commit_id: commit_id,
-    file_id: file_id,
-    file_name: file_name,
-    file_path: file_path,
-    is_renamed: is_renamed,
-    old_path: old_path,
-    change_type: change_type,
-    changed_diff_hunks_array: changed_diff_hunks_array,
-    })
-    RETURN file_changes
-
-
-QUERY CreateDiffHunk(file_id:String, diff_hunk_id: String, old_start_position: I64, old_start_count: I64, new_line_position:I64, new_line_count:I64, diff: String) =>
-    diff_hunks <- AddN<DiffHunks>({
-    file_id: file_id,
-    diff_hunk_id: diff_hunk_id,
-    old_start_position: old_start_position,
-    old_start_count: old_start_count,
-    new_line_position: new_line_position,
-    new_line_count: new_line_count,
-    diff: diff,
-    })
-    RETURN diff_hunks
-
 
 // create edges
 QUERY CreateRepositoryToBranch (repo_id: String, branch_id: String) =>
@@ -68,11 +47,6 @@ QUERY CreateRepositoryToBranch (repo_id: String, branch_id: String) =>
     hasBranch <- AddE<HasBranch>::From(repo)::To(branch)
     RETURN hasBranch
 
-QUERY CreateCommitToDiffHunks (commit_id: String, diff_hunk_id: String) =>
-    commit <- N<Commit>({commit_id: commit_id})
-    diff_hunk <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
-    hasDiffHunks <- AddE<CommitHasDiffHunks>::From(commit)::To(diff_hunk)
-    RETURN hasDiffHunks
 
 QUERY CreateBranchToCommit (branch_id: String, commit_id: String) =>
     branch <- N<Branch>({branch_id: branch_id})
@@ -80,72 +54,22 @@ QUERY CreateBranchToCommit (branch_id: String, commit_id: String) =>
     hasCommit <- AddE<HasCommit>::From(branch)::To(commit)
     RETURN hasCommit
 
+// create traversals to back to commit node for more info
+// create COmmitVector and add edge
+QUERY CreateCommitVector( commit_id: String, diff_position: String, diff_content: String) =>
+    commit_node <- N<Commit>({commit_id: commit_id})
+    // ask xav if we can pass multiple files in `Embed`
+    commit_vector_node <- AddV<CommitVector>(Embed(diff_content), {commit_id: commit_id,diff_position: diff_position, diff_content: diff_content})
+    edge <- AddE<HasCommitVector>::From(commit_node)::To(commit_vector_node)
+    RETURN commit_vector_node
 
-QUERY CreateCommitToFileChanges(commit_id: String, file_id: String)=>
-    commit <- N<Commit>({commit_id: commit_id})
-    file_changes <- N<FileChanges>({file_id: file_id})
-    hasfileChanges <- AddE<HasFileChanges>::From(commit)::To(file_changes)
-    RETURN hasfileChanges
-
-
-QUERY CreateCommitsToDiffHunks(commit_id: String, diff_hunk_id: String)=>
-    commit <- N<Commit>({commit_id: commit_id})
-    diff_hunks <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
-    hasDiff <- AddE<HasDiff>::From(commit)::To(diff_hunks)
-    RETURN hasDiff
-
-QUERY CreateFileChangesToDiffHunks(file_id: String,
-    diff_hunk_id: String)=>
-    file_changes <- N<FileChanges>({file_id: file_id})
-    diff_hunks <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
-    hasDiff <- AddE<FileChangesHasDiffHunks>::From(file_changes)::To(diff_hunks)
-    RETURN hasDiff
-
-
-// remember to add OPENAI API KEY in .env for `Embed` to work
-QUERY CreateDiffHunksVector(diff_hunk_id: String, diff_content: String, created_at: Date) =>
-    diff_hunk_node <- N<DiffHunks>({diff_hunk_id: diff_hunk_id})
-    diff_hunks_vector <- AddV<DiffHunksVector>(Embed(diff_content), {diff_hunk_id: diff_hunk_id, diff_content: diff_content, created_at: created_at})
-    edge <- AddE<DiffHunksToDiffHunksVector>::From(diff_hunk_node)::To(diff_hunks_vector)
-    RETURN diff_hunks_vector
-
-
-// commit keyword search
-QUERY SearchKeywordCommit(keywords: String, limit:I64)=>
-    results <- SearchBM25<Commit>(keywords, limit)
-    RETURN results
-
-// file changes keyword search
-QUERY SearchKeywordFileChanges(keywords: String, limit:I64)=>
-    results <- SearchBM25<FileChanges>(keywords, limit)
-    RETURN results
-
-// diff hunks keyword search
-QUERY SearchKeywordDiffHunks(keywords:String, limit: I64)=>
-    results <- SearchBM25<DiffHunks>(keywords, limit)
-    RETURN results
-
-// semantic search search diff hunks
-QUERY SearchDiffHunksVector (query: String, limit: I64) =>
-    results <- SearchV<DiffHunksVector>(Embed(query), limit)
-    RETURN results
-
-//Parameter Tuning for RerankRRF
-//Start with the default k=60 and adjust based on your observations:
-//If results seem too similar, try a lower k (30-40) to emphasize top rankings
-//If you want more variety, try a higher k (80-100) to flatten differences
-//Test with real queries and evaluate result quality
-
-QUERY SearchDiffHunksVectorRRF(query:String, limit: I64)=>
-    results <- SearchV<DiffHunksVector>(Embed(query), limit)
-        ::RerankRRF()
-        ::RANGE(0,10)
-    RETURN results
 
 // we get count for total number of items in that node.
 // now we can equally split them to spawn threads + parallelize
 // double regex hits like zed search(https://zed.dev/blog/nerd-sniped-project-search)
 
+
+// we get count because we want to parallelize
 // get all branches
 QUERY GetAllBranches () =>
     branches <- N<Branch>::COUNT
@@ -158,15 +82,7 @@ QUERY GetAllRepos () =>
 QUERY GetAllCommits () =>
     commits <- N<Commit>::COUNT
     RETURN commits
-// get all filechanges?
-QUERY GetAllFileChanges()=>
-    file_changes <- N<FileChanges>::COUNT
-    RETURN file_changes
-// get all diff hunks
-QUERY GetAllDiffHunks()=>
-    diff_hunks <- N<DiffHunks>::COUNT
-    RETURN diff_hunks
-// get all diff hunks vector
-QUERY GetAllDiffHunkVectors()=>
-    diff_hunk_vectors <- N<DiffHunksVector>::COUNT
-    RETURN diff_hunk_vectors
+// get all commit vector
+QUERY GetAllCommitVectors () =>
+    commit_vectors <- N<CommitVector>::COUNT
+    RETURN commit_vectors
