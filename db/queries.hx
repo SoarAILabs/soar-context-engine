@@ -21,11 +21,9 @@ QUERY CreateBranch (repo_id: String, branch_id: String, name: String, current_he
 // Commit
 QUERY CreateCommit (parent_commit_id: String,commit_id: String,
 no_of_files_changed: I32,
-old_blob_sha: String,
-new_blob_sha: String,
 diff_position: String,
 diff_content: String,
-commit_message: String, author_name: String, author_email: String) =>
+commit_message: String, author_name: String, author_email: String, timestamp: I64) =>
 	commit <- AddN<Commit>({
 	    parent_commit_id: parent_commit_id,
 		commit_id: commit_id,
@@ -33,29 +31,48 @@ commit_message: String, author_name: String, author_email: String) =>
 		author_name: author_name,
 		author_email: author_email,
 		no_of_files_changed: no_of_files_changed,
-		old_blob_sha: old_blob_sha,
-		new_blob_sha: new_blob_sha,
 		diff_position: diff_position,
 		diff_content: diff_content
-		})
+		,timestamp: timestamp})
 	RETURN commit
 
-// create edges
+QUERY CreateFileChange(commit_id: String, file_change_id: String, path: String, change_type: String, old_blob_sha: String, new_blob_sha: String) =>
+    file_change <- AddN<FileChange>({
+    commit_id: commit_id,
+    file_change_id: file_change_id,
+    path: path,
+    change_type: change_type,
+    old_blob_sha: old_blob_sha,
+    new_blob_sha: new_blob_sha
+})
+    RETURN file_change
+
+// edge from repo to branch
 QUERY CreateRepositoryToBranch (repo_id: String, branch_id: String) =>
     repo <- N<Repository>({repo_id: repo_id})
     branch <- N<Branch>({branch_id: branch_id})
     hasBranch <- AddE<HasBranch>::From(repo)::To(branch)
     RETURN hasBranch
 
-
+// edge from branch to commit
 QUERY CreateBranchToCommit (branch_id: String, commit_id: String) =>
     branch <- N<Branch>({branch_id: branch_id})
     commit <- N<Commit>({commit_id: commit_id})
     hasCommit <- AddE<HasCommit>::From(branch)::To(commit)
     RETURN hasCommit
 
+
+    //  edge from Commit to FileChange
+QUERY CreateCommitToFileChange (commit_id: String, file_change_id: String) =>
+    commit <- N<Commit>({commit_id: commit_id})
+    file_change <- N<FileChange>({file_change_id: file_change_id})
+    edge <- AddE<HasFileChange>::From(commit)::To(file_change)
+    RETURN edge
+
+
 // create traversals to back to commit node for more info
 // create COmmitVector and add edge
+#[model("gemini:gemini-embedding-001:RETRIEVAL_DOCUMENT")]
 QUERY CreateCommitVector( commit_id: String, diff_position: String, diff_content: String) =>
     commit_node <- N<Commit>({commit_id: commit_id})
     // ask xav if we can pass multiple files in `Embed`
@@ -84,5 +101,5 @@ QUERY GetAllCommits () =>
     RETURN commits
 // get all commit vector
 QUERY GetAllCommitVectors () =>
-    commit_vectors <- N<CommitVector>::COUNT
+    commit_vectors <- V<CommitVector>::COUNT
     RETURN commit_vectors
