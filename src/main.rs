@@ -50,71 +50,100 @@ async fn ingest_repository(
     repo_id: &str,
     repo_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Create Repository node
-    println!("Creating repository: {}", repo_name);
-    // check if repo exists
-    // let existing: serde_json::Value = client
-    //     .query(
-    //         "GetRepositoryById",
-    //         &json!({
-    //             "repo_id": repo_id
-    //         }),
-    //     )
-    //     .await?;
-    // if !existing.is_null() && existing != json!([]) {
-    //     println!("Repository {} already exists, updating instead", repo_name)
-    //     // update logic here
-    //     // let update: serde_json::Value = client.query(
-    //     //     "Update"
-    //     // )
-    // }
-    let result: serde_json::Value = client
+    // 1. Create or Update Repository node
+    println!("Processing repository: {}", repo_name);
+    let existing_repo: serde_json::Value = client
         .query(
-            "CreateRepository",
-            &json!({
-                "repo_id": repo_id,
-                "name": repo_name,
-                "created_at": chrono::Utc::now().to_rfc3339(),
-            }),
+            "GetRepositoryById",
+            &json!({ "repo_id": repo_id }),
         )
         .await?;
-    println!("  Created repository: {:?}", result);
 
-    // 2. Create Branch nodes and Repository->Branch edges
-    println!("\nCreating {} branches...", git_info.branches.len());
+    if !existing_repo.is_null() && existing_repo != json!([]) {
+        println!("  Repository {} already exists, updating...", repo_name);
+        let _: serde_json::Value = client
+            .query(
+                "UpdateRepository",
+                &json!({
+                    "repo_id": repo_id,
+                    "new_name": repo_name,
+                    "new_created_at": chrono::Utc::now().to_rfc3339(),
+                }),
+            )
+            .await?;
+    } else {
+        let _: serde_json::Value = client
+            .query(
+                "CreateRepository",
+                &json!({
+                    "repo_id": repo_id,
+                    "name": repo_name,
+                    "created_at": chrono::Utc::now().to_rfc3339(),
+                }),
+            )
+            .await?;
+        println!("  Created repository: {}", repo_name);
+    }
+
+    // 2. Create or Update Branch nodes
+    println!("\nProcessing {} branches...", git_info.branches.len());
     for branch in &git_info.branches {
         let branch_id = format!("{}:{}", repo_id, sanitize_id(&branch.name));
 
-        let _: serde_json::Value = client
+        let existing_branch: serde_json::Value = client
             .query(
-                "CreateBranch",
-                &json!({
-                    "repo_id": repo_id,
-                    "branch_id": branch_id,
-                    "name": branch.name,
-                    "current_head": branch.is_head,
-                    "has_remote": branch.is_remote,
-                }),
+                "GetBranchById",
+                &json!({ "branch_id": branch_id }),
             )
             .await?;
 
-        // Create edge: Repository -> Branch
-        let _: serde_json::Value = client
-            .query(
-                "CreateRepositoryToBranch",
-                &json!({
-                    "repo_id": repo_id,
-                    "branch_id": branch_id,
-                }),
-            )
-            .await?;
-
-        println!("  Created branch: {}", branch.name);
+        if !existing_branch.is_null() && existing_branch != json!([]) {
+            println!("  Updating branch: {}", branch.name);
+            let _: serde_json::Value = client
+                .query(
+                    "UpdateBranch",
+                    &json!({
+                        "repo_id": repo_id,
+                        "branch_id": branch_id,
+                        "new_name": branch.name,
+                        "new_current_head": branch.commit_id,
+                        "new_has_remote": branch.has_remote
+                    }),
+                )
+                .await?;
+        } else {
+            let _: serde_json::Value = client
+                .query(
+                    "CreateBranch",
+                    &json!({
+                        "repo_id": repo_id,
+                        "branch_id": branch_id,
+                        "name": branch.name,
+                        "current_head": branch.commit_id,
+                        "has_remote": branch.has_remote
+                    }),
+                )
+                .await?;
+            println!("  Created branch: {}", branch.name);
+        }
     }
 
-    // 3. Create Commit nodes, FileChange nodes, and edges
-    println!("\nCreating {} commits...", git_info.commits.len());
+    // 3. Create or Skip Commit nodes (commits are immutable)
+    println!("\nProcessing {} commits...", git_info.commits.len());
     for commit in &git_info.commits {
+        let existing_commit: serde_json::Value = client
+            .query(
+                "GetCommitById",
+                &json!({ "commit_id": commit.id }),
+            )
+            .await?;
+
+        if !existing_commit.is_null() && existing_commit != json!([]) {
+            // Commits are immutable in git, skip if already exists
+            println!("  Commit already exists: {} - {}", &commit.id[..8], commit.message);
+            continue;
+        }
+
         // Parse author: "Name <email>" -> (name, email)
         let (author_name, author_email) = parse_author(&commit.author);
 
@@ -144,17 +173,43 @@ async fn ingest_repository(
 
         println!("  Created commit: {} - {}", &commit.id[..8], commit.message);
 
-        // 4. Create FileChange nodes for each file in this commit
-        for (idx, fc) in commit.file_changes.iter().enumerate() {
-            let file_change_id = format!("{}:fc:{}", commit.id, idx);
+        // 4. Process file changes: Create File nodes and ModifiedFile edges
+        for fc in &commit.file_changes {
+            let file_id = format!("{}:{}", repo_id, sanitize_id(&fc.path));
+            let (filename, extension) = extract_filename_and_extension(&fc.path);
+            let is_deleted = matches!(fc.change_type, ChangeType::Deleted);
 
+            // Check if File node exists
+            let existing_file: serde_json::Value = client
+                .query(
+                    "GetFileById",
+                    &json!({ "file_id": file_id }),
+                )
+                .await?;
+
+            if existing_file.is_null() || existing_file == json!([]) {
+                // Create new File node
+                let _: serde_json::Value = client
+                    .query(
+                        "CreateFile",
+                        &json!({
+                            "file_id": file_id,
+                            "repo_id": repo_id,
+                            "file_path": fc.path,
+                            "filename": filename,
+                            "extension": extension,
+                        }),
+                    )
+                    .await?;
+            }
+
+            // Create ModifiedFile edge (Commit -> File)
             let _: serde_json::Value = client
                 .query(
-                    "CreateFileChange",
+                    "CreateModifiedFile",
                     &json!({
                         "commit_id": commit.id,
-                        "file_change_id": file_change_id,
-                        "path": fc.path,
+                        "file_id": file_id,
                         "change_type": change_type_to_string(&fc.change_type),
                         "old_blob_sha": fc.old_blob_sha.clone().unwrap_or_default(),
                         "new_blob_sha": fc.new_blob_sha.clone().unwrap_or_default(),
@@ -162,19 +217,11 @@ async fn ingest_repository(
                 )
                 .await?;
 
-            // Create edge: Commit -> FileChange
-            let _: serde_json::Value = client
-                .query(
-                    "CreateCommitToFileChange",
-                    &json!({
-                        "commit_id": commit.id,
-                        "file_change_id": file_change_id,
-                    }),
-                )
-                .await?;
+            // Update HasFile edge for each branch that contains this commit
+            // For now, we'll handle this in the branch linking step
         }
 
-        // 5. Create CommitVector for semantic search
+        // 5. Create CommitVector for semantic search (only for new commits)
         if !diff_content.is_empty() {
             let _: serde_json::Value = client
                 .query(
@@ -189,11 +236,12 @@ async fn ingest_repository(
         }
     }
 
-    // 6. Link branches to their tip commits
-    println!("\nLinking branches to commits...");
+    // 6. Link branches to their tip commits and update HasFile edges
+    println!("\nLinking branches to commits and files...");
     for branch in &git_info.branches {
         let branch_id = format!("{}:{}", repo_id, sanitize_id(&branch.name));
 
+        // Create BranchToCommit edge
         let _: serde_json::Value = client
             .query(
                 "CreateBranchToCommit",
@@ -203,9 +251,82 @@ async fn ingest_repository(
                 }),
             )
             .await?;
+
+        // Find the tip commit and update HasFile edges for files in that commit
+        if let Some(tip_commit) = git_info.commits.iter().find(|c| c.id == branch.commit_id) {
+            // Get all existing HasFile edges for this branch
+            let existing_edges: serde_json::Value = client
+                .query(
+                    "GetHasFileEdges",
+                    &json!({ "branch_id": branch_id }),
+                )
+                .await?;
+
+            // Build a map of file_id -> edge_id for existing edges
+            // The edge response includes the target file info via traversal
+            let mut edge_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+            if let Some(edges) = existing_edges.as_array() {
+                for edge in edges {
+                    // Extract edge id and target file_id from the edge data
+                    if let (Some(edge_id), Some(to_node)) = (
+                        edge.get("hasFileEdges").and_then(|e| e.get("id")).and_then(|id| id.as_str()),
+                        edge.get("hasFileEdges").and_then(|e| e.get("to")).and_then(|to| to.get("file_id")).and_then(|fid| fid.as_str()),
+                    ) {
+                        edge_map.insert(to_node.to_string(), edge_id.to_string());
+                    }
+                }
+            }
+
+            for fc in &tip_commit.file_changes {
+                let file_id = format!("{}:{}", repo_id, sanitize_id(&fc.path));
+                let is_deleted = matches!(fc.change_type, ChangeType::Deleted);
+                let current_blob_sha = fc.new_blob_sha.clone().unwrap_or_default();
+
+                if let Some(edge_id) = edge_map.get(&file_id) {
+                    // Update existing HasFile edge by ID
+                    let _: serde_json::Value = client
+                        .query(
+                            "UpdateHasFileById",
+                            &json!({
+                                "edge_id": edge_id,
+                                "new_blob_sha": current_blob_sha,
+                                "new_is_deleted": is_deleted,
+                            }),
+                        )
+                        .await?;
+                } else {
+                    // Create new HasFile edge
+                    let _: serde_json::Value = client
+                        .query(
+                            "CreateHasFile",
+                            &json!({
+                                "branch_id": branch_id,
+                                "file_id": file_id,
+                                "current_blob_sha": current_blob_sha,
+                                "is_deleted": is_deleted,
+                            }),
+                        )
+                        .await?;
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Extract filename and extension from a file path
+fn extract_filename_and_extension(path: &str) -> (String, String) {
+    let path = Path::new(path);
+    let filename = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_string())
+        .unwrap_or_default();
+    (filename, extension)
 }
 
 /// Parse "Name <email>" format into (name, email)
