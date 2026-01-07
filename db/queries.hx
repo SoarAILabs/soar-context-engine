@@ -71,8 +71,9 @@ QUERY CreateCommitToFileChange (commit_id: String, file_change_id: String) =>
 
 
 // create traversals to back to commit node for more info
-// create COmmitVector and add edge
-#[model("gemini:gemini-embedding-001:RETRIEVAL_DOCUMENT")]
+// create CommitVector and add edge
+// uncomment if want to use gemini
+//#[model("gemini:gemini-embedding-001:RETRIEVAL_DOCUMENT")]
 QUERY CreateCommitVector( commit_id: String, diff_position: String, diff_content: String) =>
     commit_node <- N<Commit>({commit_id: commit_id})
     // ask xav if we can pass multiple files in `Embed`
@@ -103,3 +104,24 @@ QUERY GetAllCommits () =>
 QUERY GetAllCommitVectors () =>
     commit_vectors <- V<CommitVector>::COUNT
     RETURN commit_vectors
+
+// delete all branches
+QUERY DeleteAllBranches()=>
+    DROP N<Branch>
+    RETURN "Deleted all branches"
+// delete all repos
+QUERY DeleteAllRepos()=>
+    DROP N<Repository>
+    RETURN "Deleted all repos"
+// delete all commits
+QUERY DeleteAllCommits()=>
+    DROP N<Commit>
+    RETURN "Deleted all commits"
+// delete all commits
+QUERY DeleteAllVectorCommits()=>
+    DROP N<CommitVector>
+    RETURN "Deleted all vector commits"
+// delete all file changes
+QUERY DeleteAllVectorCommits()=>
+    DROP N<FileChange>
+    RETURN "Deleted all file changes"
