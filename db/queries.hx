@@ -118,7 +118,7 @@ QUERY GetCommitById(commit_id: String)=>
     commit <- N<Commit>({commit_id: commit_id})
     RETURN commit
 
-// get hasfile - traverse from branch to get all HasFile edges, 
+// get hasfile - traverse from branch to get all HasFile edges,
 // then filter in application code by checking if the edge's target file matches
 QUERY GetHasFileEdges(branch_id: String) =>
     branch <- N<Branch>({branch_id: branch_id})

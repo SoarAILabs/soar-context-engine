@@ -4,6 +4,32 @@ use helix_rs::{HelixDB, HelixDBClient};
 use serde_json::json;
 use std::path::Path;
 
+/// Helper to query and return None if "No value found" error occurs
+async fn query_optional(
+    client: &HelixDB,
+    query_name: &str,
+    params: &serde_json::Value,
+) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
+    match client.query::<_, serde_json::Value>(query_name, params).await {
+        Ok(result) => {
+            if result.is_null() || result == json!([]) {
+                Ok(None)
+            } else {
+                Ok(Some(result))
+            }
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            // Treat "No value found" as not existing (return None)
+            if err_str.contains("No value found") {
+                Ok(None)
+            } else {
+                Err(e.into())
+            }
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Helix client
@@ -52,14 +78,9 @@ async fn ingest_repository(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Create or Update Repository node
     println!("Processing repository: {}", repo_name);
-    let existing_repo: serde_json::Value = client
-        .query(
-            "GetRepositoryById",
-            &json!({ "repo_id": repo_id }),
-        )
-        .await?;
+    let existing_repo = query_optional(client, "GetRepositoryById", &json!({ "repo_id": repo_id })).await?;
 
-    if !existing_repo.is_null() && existing_repo != json!([]) {
+    if existing_repo.is_some() {
         println!("  Repository {} already exists, updating...", repo_name);
         let _: serde_json::Value = client
             .query(
@@ -90,14 +111,9 @@ async fn ingest_repository(
     for branch in &git_info.branches {
         let branch_id = format!("{}:{}", repo_id, sanitize_id(&branch.name));
 
-        let existing_branch: serde_json::Value = client
-            .query(
-                "GetBranchById",
-                &json!({ "branch_id": branch_id }),
-            )
-            .await?;
+        let existing_branch = query_optional(client, "GetBranchById", &json!({ "branch_id": branch_id })).await?;
 
-        if !existing_branch.is_null() && existing_branch != json!([]) {
+        if existing_branch.is_some() {
             println!("  Updating branch: {}", branch.name);
             let _: serde_json::Value = client
                 .query(
@@ -106,8 +122,8 @@ async fn ingest_repository(
                         "repo_id": repo_id,
                         "branch_id": branch_id,
                         "new_name": branch.name,
-                        "new_current_head": branch.commit_id,
-                        "new_has_remote": branch.has_remote
+                        "new_current_head": branch.is_head,
+                        "new_has_remote": branch.is_remote
                     }),
                 )
                 .await?;
@@ -119,11 +135,23 @@ async fn ingest_repository(
                         "repo_id": repo_id,
                         "branch_id": branch_id,
                         "name": branch.name,
-                        "current_head": branch.commit_id,
-                        "has_remote": branch.has_remote
+                        "current_head": branch.is_head,
+                        "has_remote": branch.is_remote
                     }),
                 )
                 .await?;
+
+            // Create HasBranch edge (Repository -> Branch)
+            let _: serde_json::Value = client
+                .query(
+                    "CreateRepositoryToBranch",
+                    &json!({
+                        "repo_id": repo_id,
+                        "branch_id": branch_id,
+                    }),
+                )
+                .await?;
+
             println!("  Created branch: {}", branch.name);
         }
     }
@@ -131,14 +159,9 @@ async fn ingest_repository(
     // 3. Create or Skip Commit nodes (commits are immutable)
     println!("\nProcessing {} commits...", git_info.commits.len());
     for commit in &git_info.commits {
-        let existing_commit: serde_json::Value = client
-            .query(
-                "GetCommitById",
-                &json!({ "commit_id": commit.id }),
-            )
-            .await?;
+        let existing_commit = query_optional(client, "GetCommitById", &json!({ "commit_id": commit.id })).await?;
 
-        if !existing_commit.is_null() && existing_commit != json!([]) {
+        if existing_commit.is_some() {
             // Commits are immutable in git, skip if already exists
             println!("  Commit already exists: {} - {}", &commit.id[..8], commit.message);
             continue;
@@ -177,17 +200,11 @@ async fn ingest_repository(
         for fc in &commit.file_changes {
             let file_id = format!("{}:{}", repo_id, sanitize_id(&fc.path));
             let (filename, extension) = extract_filename_and_extension(&fc.path);
-            let is_deleted = matches!(fc.change_type, ChangeType::Deleted);
 
             // Check if File node exists
-            let existing_file: serde_json::Value = client
-                .query(
-                    "GetFileById",
-                    &json!({ "file_id": file_id }),
-                )
-                .await?;
+            let existing_file = query_optional(client, "GetFileById", &json!({ "file_id": file_id })).await?;
 
-            if existing_file.is_null() || existing_file == json!([]) {
+            if existing_file.is_none() {
                 // Create new File node
                 let _: serde_json::Value = client
                     .query(
@@ -241,7 +258,26 @@ async fn ingest_repository(
     for branch in &git_info.branches {
         let branch_id = format!("{}:{}", repo_id, sanitize_id(&branch.name));
 
-        // Create BranchToCommit edge
+        // Find the tip commit - skip if not in our extracted commits
+        let tip_commit = match git_info.commits.iter().find(|c| c.id == branch.commit_id) {
+            Some(c) => c,
+            None => {
+                println!("  Skipping branch {} - commit {} not in extracted commits", 
+                    branch.name, &branch.commit_id[..8.min(branch.commit_id.len())]);
+                continue;
+            }
+        };
+
+        // Check if commit exists in database before creating edge
+        let existing_commit = query_optional(client, "GetCommitById", &json!({ "commit_id": branch.commit_id })).await?;
+
+        if existing_commit.is_none() {
+            println!("  Skipping branch {} - commit {} not in database", 
+                branch.name, &branch.commit_id[..8.min(branch.commit_id.len())]);
+            continue;
+        }
+
+        // Create BranchToCommit edge (only if commit exists)
         let _: serde_json::Value = client
             .query(
                 "CreateBranchToCommit",
@@ -252,8 +288,8 @@ async fn ingest_repository(
             )
             .await?;
 
-        // Find the tip commit and update HasFile edges for files in that commit
-        if let Some(tip_commit) = git_info.commits.iter().find(|c| c.id == branch.commit_id) {
+        // Update HasFile edges for files in that commit
+        {
             // Get all existing HasFile edges for this branch
             let existing_edges: serde_json::Value = client
                 .query(
@@ -281,6 +317,26 @@ async fn ingest_repository(
                 let file_id = format!("{}:{}", repo_id, sanitize_id(&fc.path));
                 let is_deleted = matches!(fc.change_type, ChangeType::Deleted);
                 let current_blob_sha = fc.new_blob_sha.clone().unwrap_or_default();
+
+                // Ensure File node exists before creating/updating HasFile edge
+                let existing_file = query_optional(client, "GetFileById", &json!({ "file_id": file_id })).await?;
+
+                if existing_file.is_none() {
+                    // File doesn't exist - create it first
+                    let (filename, extension) = extract_filename_and_extension(&fc.path);
+                    let _: serde_json::Value = client
+                        .query(
+                            "CreateFile",
+                            &json!({
+                                "file_id": file_id,
+                                "repo_id": repo_id,
+                                "file_path": fc.path,
+                                "filename": filename,
+                                "extension": extension,
+                            }),
+                        )
+                        .await?;
+                }
 
                 if let Some(edge_id) = edge_map.get(&file_id) {
                     // Update existing HasFile edge by ID
