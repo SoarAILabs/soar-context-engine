@@ -27,16 +27,13 @@ N::Commit{
 	timestamp: I64
 }
 
-// file changes
-N::FileChange{
-    INDEX file_change_id: String,
-    INDEX commit_id: String,
-    path: String,
-    change_type: String,
-    old_blob_sha: String,
-    new_blob_sha: String,
+N::File{
+    INDEX file_id: String,
+    INDEX repo_id: String,
+    file_path: String,
+    filename: String,
+    extension: String,
 }
-
 
 // vectors
 V::CommitVector{
@@ -46,10 +43,26 @@ V::CommitVector{
 }
 
 // edges
-E::HasFileChange{
-    From:Commit,
-    To: FileChange
+E::HasFile{
+    From: Branch,
+    To: File,
+    Properties: {
+        current_blob_sha: String,
+        is_deleted: Boolean
+    }
 }
+
+E::ModifiedFile{
+    From: Commit,
+    To: File,
+    Properties: {
+        file_id: String, 
+        change_type: String, 
+        old_blob_sha: String,
+        new_blob_sha: String
+    }
+}
+
 E::HasBranch{
     From: Repository,
     To: Branch
@@ -59,8 +72,9 @@ E::HasCommit{
     From: Branch,
     To: Commit
 }
+
 // commit to commit_vector
 E::HasCommitVector{
     From: Commit,
-    To: CommitVector,
+    To: CommitVector
 }
