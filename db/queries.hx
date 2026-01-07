@@ -86,24 +86,41 @@ QUERY CreateCommitVector( commit_id: String, diff_position: String, diff_content
 // now we can equally split them to spawn threads + parallelize
 // double regex hits like zed search(https://zed.dev/blog/nerd-sniped-project-search)
 
-
-// we get count because we want to parallelize
-// get all branches
-QUERY GetAllBranches () =>
-    branches <- N<Branch>::COUNT
-    RETURN branches
 // get all repos
 QUERY GetAllRepos () =>
-    repos <- N<Repository>::COUNT
+    repos <- N<Repository>
     RETURN repos
 // get all commits
 QUERY GetAllCommits () =>
-    commits <- N<Commit>::COUNT
+    commits <- N<Commit>
     RETURN commits
 // get all commit vector
 QUERY GetAllCommitVectors () =>
+    commit_vectors <- V<CommitVector>
+    RETURN commit_vectors
+
+// we get count because we want to parallelize
+// get all branches count
+QUERY GetAllBranchesCount () =>
+    branches <- N<Branch>::COUNT
+    RETURN branches
+// get all repos count
+QUERY GetAllReposCount () =>
+    repos <- N<Repository>::COUNT
+    RETURN repos
+// get all commits count
+QUERY GetAllCommitsCount () =>
+    commits <- N<Commit>::COUNT
+    RETURN commits
+// get all commit vector count
+QUERY GetAllCommitVectorsCount () =>
     commit_vectors <- V<CommitVector>::COUNT
     RETURN commit_vectors
+
+// get repo by id
+QUERY GetRepositoryById(repo_id: String)=>
+    repo <- N<Repository>({repo_id: repo_id})
+    RETURN repo
 
 // delete all branches
 QUERY DeleteAllBranches()=>
@@ -117,11 +134,11 @@ QUERY DeleteAllRepos()=>
 QUERY DeleteAllCommits()=>
     DROP N<Commit>
     RETURN "Deleted all commits"
-// delete all commits
+// delete all commits vectors
 QUERY DeleteAllVectorCommits()=>
-    DROP N<CommitVector>
+    DROP V<CommitVector>
     RETURN "Deleted all vector commits"
 // delete all file changes
-QUERY DeleteAllVectorCommits()=>
+QUERY DeleteAllFileChanges()=>
     DROP N<FileChange>
     RETURN "Deleted all file changes"

@@ -52,6 +52,22 @@ async fn ingest_repository(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Create Repository node
     println!("Creating repository: {}", repo_name);
+    // check if repo exists
+    // let existing: serde_json::Value = client
+    //     .query(
+    //         "GetRepositoryById",
+    //         &json!({
+    //             "repo_id": repo_id
+    //         }),
+    //     )
+    //     .await?;
+    // if !existing.is_null() && existing != json!([]) {
+    //     println!("Repository {} already exists, updating instead", repo_name)
+    //     // update logic here
+    //     // let update: serde_json::Value = client.query(
+    //     //     "Update"
+    //     // )
+    // }
     let result: serde_json::Value = client
         .query(
             "CreateRepository",
